@@ -1,4 +1,5 @@
 /// KvStore crate
 #[deny(missing_docs)]
 mod kv;
-pub use kv::KvStore;
+mod error;
+pub use kv::{Result, KvStore};
