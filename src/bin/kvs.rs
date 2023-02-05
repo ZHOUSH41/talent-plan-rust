@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::Parser;
 use kvs::{Commands, KvErr, KvStore, Result};
 use serde::{Deserialize, Serialize};
 use std::env;

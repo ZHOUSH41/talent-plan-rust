@@ -3,8 +3,7 @@ use serde_json::Deserializer;
 use crate::{error::Result, error::KvErr, Commands};
 use std::collections::HashMap;
 use std::fs::{OpenOptions, create_dir_all, read_dir, File};
-use std::io::{Write, BufReader};
-use std::os::unix::prelude::FileExt;
+use std::io::{Write, BufReader, SeekFrom, Seek, Read};
 use std::path::PathBuf;
 
 /// KvStore main data structure
@@ -50,12 +49,13 @@ impl KvStore {
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
         match self.store.get(&key) {
             Some(t) => {
+                // println!("pos: {}, sz: {}", t.value_pos,t.value_sz);
                 let reader_path = self.dir_path.join(format!("store_file_{}.txt", t.file_id));
-                let file = OpenOptions::new().read(true).open(&reader_path)?;
-                let mut buf =  [0u8; 0];
-                file.read_exact_at(&mut buf, t.value_pos);
-                println!("file name: {:?}, buf {:?}, offset: {:?}",reader_path, buf, t.value_pos);
-                if let Some(Commands::Set { key, value }) = serde_json::from_slice(&buf)? {
+                let mut file = OpenOptions::new().read(true).open(&reader_path)?;
+                let mut buf_reader = BufReader::new(file);
+                buf_reader.seek(SeekFrom::Start(t.value_pos))?;
+                let mut read_file_with_cap = buf_reader.take(t.value_sz);
+                if let Some(Commands::Set { key, value }) = serde_json::from_reader(read_file_with_cap)? {
                     Ok(Some(value))
                 } else {
                     Err(KvErr::UnknownCommand)
@@ -70,12 +70,12 @@ impl KvStore {
     /// Return an error if the value is not written successfully.
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
         let cmd = Commands::Set { key: key.clone(), value };
-        let series_data = serde_json::to_vec(&cmd)?;
+        let series_data = serde_json::to_string(&cmd)?;
         let new_file_name = self
             .dir_path
             .join(format!("store_file_{}.txt", self.current_file_id));
         let mut file = OpenOptions::new().create(true).append(true).open(&new_file_name)?;
-        let len = file.write(&series_data)?;
+        let len = file.write(series_data.as_bytes())?;
         let offset = self.current_file_offset;
         self.current_file_offset += len as u64;
         let entry = KvEntry {
@@ -108,20 +108,6 @@ impl KvStore {
     }
 
     fn recover(dir_path: &PathBuf, store: &mut HashMap<String, KvEntry>) -> Result<(u64, u64)> {
-        // println!("dir_path {:?}", dir_path);
-        // let mut data_files: Vec<usize> = read_dir(dir_path)?
-        //             .flat_map(|res| res.map(|e| e.path()))
-        //             .filter(|path| path.is_file() && path.extension() == Some(".txt".as_ref()))
-        //             .flat_map(|path| {
-        //                 path.file_name().and_then(|filename| filename.to_str())
-        //                     .map(|filename| {
-        //                         filename.trim_start_matches("store_file_")
-        //                             .trim_end_matches(".txt")
-        //                     })
-        //                     .map(str::parse::<usize>)
-        //             })
-        //             .flatten()
-        //             .collect();
         let mut data_files: Vec<u64> = read_dir(dir_path)?
             .flat_map(|res| res.map(|e| e.path()))
             .filter(|path| path.is_file() && path.extension() == Some("txt".as_ref()))
@@ -144,7 +130,7 @@ impl KvStore {
             let file_path = dir_path.join(format!("store_file_{}.txt", data));          
             let reader = BufReader::new(File::open(&file_path)?);
             let mut iter = Deserializer::from_reader(reader).into_iter::<Commands>();
-            let before_offset = iter.byte_offset() as u64;
+            let mut before_offset = iter.byte_offset() as u64;
             while let Some(command) = iter.next() {
                 let after_offset = iter.byte_offset() as u64;
                 match command? {
@@ -157,6 +143,7 @@ impl KvStore {
                     Commands::Get { key } => todo!(),
                 }
                 current_file_offset = after_offset;
+                before_offset = after_offset;
             }
         }
         Ok((*data_files.last().unwrap_or(&0), current_file_offset))
