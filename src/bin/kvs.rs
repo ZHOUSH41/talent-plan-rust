@@ -1,49 +1,37 @@
-use clap::{Parser, Subcommand};
-use kvs::KvStore;
-#[derive(Parser)]
+use clap::{Parser, Subcommand, ValueEnum};
+use kvs::{Commands, KvErr, KvStore, Result};
+use serde::{Deserialize, Serialize};
+use std::env;
+#[derive(Deserialize, Serialize, Debug, Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
-    command: Option<Commands>,
+    cmd: Option<Commands>,
 }
-
-#[derive(Subcommand)]
-enum Commands {
-    /// get key related value from kv store
-    Get {
-        /// lists test values
-        key: String,
-    },
-    /// set key and value in kv store 
-    Set {
-        key: String,
-        value: String,
-    },
-    /// remove key from kv store
-    Rm {
-        key: String,
-    },
-}
-
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
-
-    match cli.command {
-        Some(Commands::Get{key}) => {
-            eprintln!("unimplemented");
-            std::process::exit(1);
+    // println!("current dir {:?}", env::current_dir()?);
+    let mut store = KvStore::open(env::current_dir()?)?;
+    match cli.cmd {
+        Some(Commands::Get { key }) => match store.get(key)? {
+            Some(val) => println!("{}", val),
+            None => println!("Key not found"),
         },
-        Some(Commands::Set { key, value }) => {
-            eprintln!("unimplemented");
-            std::process::exit(1);
-        },
+        Some(Commands::Set { key, value } )=> {
+            if let Err(err) = store.set(key, value) {
+                println!("{}", err);
+                std::process::exit(1);
+            }
+        }
         Some(Commands::Rm { key }) => {
-            eprintln!("unimplemented");
+            if let Err(KvErr::KeyNotFound) = store.remove(key) {
+                println!("Key not found");
+                std::process::exit(1);
+            }
+        }
+        _ => {
             std::process::exit(1);
-        },
-        None => {
-            eprintln!("command don't implement!");
-            std::process::exit(1);
-        },
+        }
     }
+    Ok(())
 }

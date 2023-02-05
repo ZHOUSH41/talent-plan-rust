@@ -4,6 +4,8 @@ version = "0.1.0"
 authors = ["zhou"]
 description = "A key-value store"
 edition = "2021"
+[env]
+RUST_BACKTRACE = "1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -11,6 +13,8 @@ edition = "2021"
 assert_cmd = "2.0.6"
 predicates = "2.1.2"
 clap = {version = "4.0.22", features = ["derive"]}
-tempfile = "3.0.7"
-walkdir = "2.2.7"
+tempfile = "3"
+walkdir = "2.3.2"
 failure = "0.1.8"
+serde_json = "1.0"
+serde = {version ="1.0", features = ["derive"] }

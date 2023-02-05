@@ -2,4 +2,8 @@
 #[deny(missing_docs)]
 mod kv;
 mod error;
-pub use kv::{Result, KvStore};
+mod command;
+pub use kv::KvStore;
+pub use error::Result;
+pub use error::KvErr;
+pub use command::Commands;
