@@ -58,14 +58,13 @@ impl KvStore {
     pub fn get(&mut self, key: String) -> Result<Option<String>> {
         match self.store.get(&key) {
             Some(t) => {
-                // println!("pos: {}, sz: {}", t.value_pos,t.value_sz);
                 let reader_path = self.dir_path.join(format!("store_file_{}.txt", t.file_id));
-                let mut file = OpenOptions::new().read(true).open(&reader_path)?;
+                let file = OpenOptions::new().read(true).open(&reader_path)?;
                 let mut buf_reader = BufReader::new(file);
                 buf_reader.seek(SeekFrom::Start(t.value_pos))?;
-                let mut read_file_with_cap = buf_reader.take(t.value_sz);
+                let read_file_with_cap = buf_reader.take(t.value_sz);
                 // TODO: serde_json::from_reader slower method than from_str or simliar other method
-                if let Some(Commands::Set { key, value }) =
+                if let Some(Commands::Set { key: _, value }) =
                     serde_json::from_reader(read_file_with_cap)?
                 {
                     Ok(Some(value))
@@ -89,9 +88,7 @@ impl KvStore {
             .join(format!("store_file_{}.txt", self.current_file_id));
         let mut file = OpenOptions::new().append(true).open(&new_file_name)?;
         let len = file.write(series_data.as_bytes())?;
-        if len == 0 {
-            panic!("write 0 bytes");
-        }
+        assert_ne!(len, 0);
         let offset = self.current_file_offset;
         self.current_file_offset += len as u64;
         let entry = KvEntry {
@@ -145,29 +142,17 @@ impl KvStore {
         dir_path: &PathBuf,
         store: &mut HashMap<String, KvEntry>,
     ) -> Result<(u64, u64, u64)> {
-        // println!("recover init");
         let data_files = Self::find_dir_data_files(&dir_path)?;
         let mut current_file_offset = 0;
         let mut redundant_data_sz = 0;
-        // println!("current data files: {:?}", data_files);
         for data in &data_files {
             let file_path = dir_path.join(format!("store_file_{}.txt", data));
-            // let mut reader = BufReader::new(File::open(&file_path)?);
-            // let mut buf_tmp = Vec::new();
-            // reader.read_to_end(&mut buf_tmp);
-            // // println!(
-            //     "file name {:?}, content {:?}",
-            //     data,
-            //     String::from_utf8_lossy(&buf_tmp)
-            // );
             let reader = BufReader::new(File::open(&file_path)?);
             let mut iter = Deserializer::from_reader(reader).into_iter::<Commands>();
             let mut before_offset = iter.byte_offset() as u64;
             while let Some(command) = iter.next() {
                 let after_offset = iter.byte_offset() as u64;
-                if after_offset - before_offset == 0 {
-                    panic!("after offset equal before offset");
-                }
+                assert_ne!(after_offset, before_offset);
                 match command? {
                     Commands::Set { key, value: _ } => {
                         redundant_data_sz += store
@@ -211,25 +196,15 @@ impl KvStore {
             .join(format!("store_file_{}.txt", self.current_file_id));
         let mut before_offset = 0;
         let mut buf_writer = BufWriter::new(OpenOptions::new().append(true).open(&new_file_name)?);
-        for (key, entry) in self.store.iter_mut() {
-            // dbg!(key, &entry);
+        for entry in self.store.values_mut() {
             let file_path = self
                 .dir_path
                 .join(format!("store_file_{}.txt", entry.file_id));
-            // if entry.file_id == 2 {
-            //     let mut reader = BufReader::new(File::open(&file_path)?);
-            //     let mut buf = vec![];
-            //     reader.read_to_end(&mut buf);
-            //     // dbg!("reader file content ", String::from_utf8_lossy(&buf));
-            // }
             let mut reader = BufReader::new(File::open(&file_path)?);
             reader.seek(SeekFrom::Start(entry.value_pos))?;
             let mut data_reader = reader.take(entry.value_sz);
-            // dbg!(&data_reader);
             let len = io::copy(&mut data_reader, &mut buf_writer)?;
-            if len == 0 {
-                panic!("compact io copy len == 0");
-            }
+            assert_ne!(len, 0);
             *entry = KvEntry {
                 file_id: self.current_file_id,
                 value_sz: len,
